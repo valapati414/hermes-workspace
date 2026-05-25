@@ -3,7 +3,14 @@ import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { getHermesRoot, getProfilesDir, getLocalBinDir } from './claude-paths'
 
-export const SWARM_CANONICAL_REPO = resolve(process.cwd())
+/**
+ * Canonical repo root. Prefer explicit env var so systemd/Docker deployments
+ * don't depend on the working directory at server start time.
+ */
+export const SWARM_CANONICAL_REPO =
+  process.env.HERMES_WORKSPACE_ROOT
+    ? resolve(process.env.HERMES_WORKSPACE_ROOT)
+    : resolve(process.cwd())
 export const SWARM_MEMORY_ROOT = process.env.HERMES_SWARM_MEMORY_ROOT || join(homedir(), 'hermes-workspace')
 export const SWARM_MEMORY_HANDOFFS = join(SWARM_MEMORY_ROOT, 'memory')
 export const SWARM_FORBIDDEN_PATHS: string[] = []

@@ -760,6 +760,16 @@ async function sendPromptToLiveSession(workerId: string, prompt: string): Promis
 function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: SwarmRosterWorker | undefined, options?: { waitForCheckpoint?: boolean; checkpointPollMs?: number; missionId?: string | null; notifySessionKey?: string | null }): Promise<WorkerResult> {
   return new Promise(async (resolve) => {
     const workerId = assignment.workerId
+    const profilePath = getProfilePath(workerId)
+
+    // Bootstrap profile on both tmux and oneshot paths so workers always have
+    // the required config.yaml and .env symlink before execution.
+    try {
+      ensureSwarmProfileConfig(profilePath)
+    } catch (bootstrapErr) {
+      console.warn(`[swarm-dispatch] profile bootstrap warning for ${workerId}:`, bootstrapErr)
+    }
+
     const prompt = buildWorkerPrompt({
       workerId,
       task: assignment.task,
@@ -769,7 +779,7 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
       missionId: options?.missionId ?? null,
       taskTitle: assignment.task.slice(0, 120),
     })
-    const profilePath = getProfilePath(workerId)
+    // profilePath already declared above
     const runtimeBeforeDispatch = readRuntimeCheckpointSnapshot(profilePath)
     const previousRaw = runtimeBeforeDispatch.checkpointRaw
     const baselineRuntimeSignature = runtimeCheckpointSignature(runtimeBeforeDispatch)
@@ -848,7 +858,7 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
               nextAction: checkpoint.nextAction,
             },
           })
-          publishSwarmCheckpointNotification({
+          void publishSwarmCheckpointNotification({
             workerId,
             missionId: options?.missionId ?? null,
             assignmentId: assignment.assignmentId ?? null,
@@ -968,7 +978,7 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
                 nextAction: checkpoint.nextAction,
               },
             })
-            publishSwarmCheckpointNotification({
+            void publishSwarmCheckpointNotification({
               workerId,
               missionId: options?.missionId ?? null,
               assignmentId: assignment.assignmentId ?? null,

@@ -1,31 +1,33 @@
 import { join } from 'node:path'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { ParsedSwarmCheckpoint } from './swarm-checkpoints'
 import { getSwarmProfilePath } from './swarm-foundation'
 import { publishChatEvent } from './chat-event-bus'
+
+const execFileAsync = promisify(execFile)
 
 const ORCHESTRATOR_WORKER_ID = process.env.SWARM_ORCHESTRATOR_WORKER_ID?.trim() || 'orchestrator'
 const ORCHESTRATOR_TMUX_SESSION = `swarm-${ORCHESTRATOR_WORKER_ID}`
 const MAIN_SESSION_KEY = process.env.SWARM_MAIN_SESSION_KEY?.trim() || 'main'
 
-function tmuxSessionExists(session: string): boolean {
+async function tmuxSessionExists(session: string): Promise<boolean> {
   try {
-    execFileSync('tmux', ['has-session', '-t', session], { stdio: 'ignore' })
+    await execFileAsync('tmux', ['has-session', '-t', session], { timeout: 3000 })
     return true
   } catch {
     return false
   }
 }
 
-function tmuxSendText(session: string, text: string): { sent: boolean; error?: string } {
-  if (!tmuxSessionExists(session)) {
+async function tmuxSendText(session: string, text: string): Promise<{ sent: boolean; error?: string }> {
+  if (!(await tmuxSessionExists(session))) {
     return { sent: false, error: `tmux session ${session} not found` }
   }
   try {
-    // Use literal mode so multi-line content sends without shell interpretation, then send Enter to submit.
-    execFileSync('tmux', ['send-keys', '-t', session, '-l', text], { stdio: 'ignore' })
-    execFileSync('tmux', ['send-keys', '-t', session, 'Enter'], { stdio: 'ignore' })
+    await execFileAsync('tmux', ['send-keys', '-t', session, '-l', text], { timeout: 3000 })
+    await execFileAsync('tmux', ['send-keys', '-t', session, 'Enter'], { timeout: 3000 })
     return { sent: true }
   } catch (err) {
     return { sent: false, error: err instanceof Error ? err.message : String(err) }
@@ -61,17 +63,20 @@ function orchestratorPromptForCheckpoint(input: {
   return lines.join('\n')
 }
 
-export function publishCheckpointToOrchestrator(input: {
+export async function publishCheckpointToOrchestrator(input: {
   workerId: string
   checkpoint: ParsedSwarmCheckpoint
   missionId?: string | null
-}): { sent: boolean; session: string; error?: string; skippedSelf?: boolean } {
+}): Promise<{ sent: boolean; session: string; error?: string; skippedSelf?: boolean }> {
   // Don't echo a checkpoint into the orchestrator's own pane.
   if (input.workerId === ORCHESTRATOR_WORKER_ID) {
     return { sent: false, session: ORCHESTRATOR_TMUX_SESSION, skippedSelf: true }
   }
   const text = orchestratorPromptForCheckpoint(input)
-  const result = tmuxSendText(ORCHESTRATOR_TMUX_SESSION, text)
+  const result = await tmuxSendText(ORCHESTRATOR_TMUX_SESSION, text)
+  if (!result.sent && result.error) {
+    console.warn(`[swarm-notifications] publishCheckpointToOrchestrator: ${result.error}`)
+  }
   return { ...result, session: ORCHESTRATOR_TMUX_SESSION }
 }
 
@@ -143,13 +148,13 @@ function shouldEscalateToMain(stateLabel: string): boolean {
   return stateLabel === 'NEEDS_INPUT'
 }
 
-export function publishSwarmCheckpointNotification(input: {
+export async function publishSwarmCheckpointNotification(input: {
   workerId: string
   checkpoint: ParsedSwarmCheckpoint
   missionId?: string | null
   assignmentId?: string | null
   notifySessionKey?: string | null
-}): { published: boolean; sessionKey: string; route: 'orchestrator' | 'main' | 'noop'; orchestrator?: { sent: boolean; session: string; error?: string; skippedSelf?: boolean } } {
+}): Promise<{ published: boolean; sessionKey: string; route: 'orchestrator' | 'main' | 'noop'; orchestrator?: { sent: boolean; session: string; error?: string; skippedSelf?: boolean } }> {
   const profilePath = getSwarmProfilePath(input.workerId)
   const runtimePath = join(profilePath, 'runtime.json')
   const current = readRuntime(runtimePath)
@@ -187,14 +192,15 @@ export function publishSwarmCheckpointNotification(input: {
     checkpointSummary(input.checkpoint),
   ].filter(Boolean).join(' — ')
 
-  // 1. Route to orchestrator by default.
-  const orchestratorResult = publishCheckpointToOrchestrator({
+  // 1. Route to orchestrator by default (fire-and-forget — async, non-blocking).
+  const orchestratorResultPromise = publishCheckpointToOrchestrator({
     workerId: input.workerId,
     checkpoint: input.checkpoint,
     missionId: input.missionId,
   })
 
   // 2. Escalate to the main agent only on NEEDS_INPUT, or when the orchestrator is unreachable.
+  const orchestratorResult = await orchestratorResultPromise
   const mustEscalate = shouldEscalateToMain(input.checkpoint.stateLabel) || (!orchestratorResult.sent && !orchestratorResult.skippedSelf)
   let publishedToMain = false
 

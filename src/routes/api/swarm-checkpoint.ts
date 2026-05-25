@@ -134,7 +134,7 @@ export const Route = createFileRoute('/api/swarm-checkpoint')({
         const runtimeSnapshot = readRuntimeCheckpointSnapshot(profilePath)
         const parsedCheckpoint = checkpointFromRuntimeSnapshot(runtimeSnapshot)
         const notification = parsedCheckpoint
-          ? publishSwarmCheckpointNotification({
+          ? await publishSwarmCheckpointNotification({
               workerId,
               missionId,
               assignmentId,

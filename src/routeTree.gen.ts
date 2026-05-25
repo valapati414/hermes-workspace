@@ -52,6 +52,7 @@ import { Route as ApiSwarmRuntimeRouteImport } from './routes/api/swarm-runtime'
 import { Route as ApiSwarmRosterRouteImport } from './routes/api/swarm-roster'
 import { Route as ApiSwarmReportsRouteImport } from './routes/api/swarm-reports'
 import { Route as ApiSwarmProjectRouteImport } from './routes/api/swarm-project'
+import { Route as ApiSwarmProfilesBootstrapRouteImport } from './routes/api/swarm-profiles-bootstrap'
 import { Route as ApiSwarmOrchestratorLoopRouteImport } from './routes/api/swarm-orchestrator-loop'
 import { Route as ApiSwarmMissionsRouteImport } from './routes/api/swarm-missions'
 import { Route as ApiSwarmMemoryRouteImport } from './routes/api/swarm-memory'
@@ -374,6 +375,12 @@ const ApiSwarmProjectRoute = ApiSwarmProjectRouteImport.update({
   path: '/api/swarm-project',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSwarmProfilesBootstrapRoute =
+  ApiSwarmProfilesBootstrapRouteImport.update({
+    id: '/api/swarm-profiles-bootstrap',
+    path: '/api/swarm-profiles-bootstrap',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiSwarmOrchestratorLoopRoute =
   ApiSwarmOrchestratorLoopRouteImport.update({
     id: '/api/swarm-orchestrator-loop',
@@ -991,6 +998,7 @@ export interface FileRoutesByFullPath {
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
   '/api/swarm-missions': typeof ApiSwarmMissionsRoute
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
+  '/api/swarm-profiles-bootstrap': typeof ApiSwarmProfilesBootstrapRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
   '/api/swarm-reports': typeof ApiSwarmReportsRoute
   '/api/swarm-roster': typeof ApiSwarmRosterRoute
@@ -1141,6 +1149,7 @@ export interface FileRoutesByTo {
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
   '/api/swarm-missions': typeof ApiSwarmMissionsRoute
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
+  '/api/swarm-profiles-bootstrap': typeof ApiSwarmProfilesBootstrapRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
   '/api/swarm-reports': typeof ApiSwarmReportsRoute
   '/api/swarm-roster': typeof ApiSwarmRosterRoute
@@ -1293,6 +1302,7 @@ export interface FileRoutesById {
   '/api/swarm-memory': typeof ApiSwarmMemoryRouteWithChildren
   '/api/swarm-missions': typeof ApiSwarmMissionsRoute
   '/api/swarm-orchestrator-loop': typeof ApiSwarmOrchestratorLoopRoute
+  '/api/swarm-profiles-bootstrap': typeof ApiSwarmProfilesBootstrapRoute
   '/api/swarm-project': typeof ApiSwarmProjectRoute
   '/api/swarm-reports': typeof ApiSwarmReportsRoute
   '/api/swarm-roster': typeof ApiSwarmRosterRoute
@@ -1446,6 +1456,7 @@ export interface FileRouteTypes {
     | '/api/swarm-memory'
     | '/api/swarm-missions'
     | '/api/swarm-orchestrator-loop'
+    | '/api/swarm-profiles-bootstrap'
     | '/api/swarm-project'
     | '/api/swarm-reports'
     | '/api/swarm-roster'
@@ -1596,6 +1607,7 @@ export interface FileRouteTypes {
     | '/api/swarm-memory'
     | '/api/swarm-missions'
     | '/api/swarm-orchestrator-loop'
+    | '/api/swarm-profiles-bootstrap'
     | '/api/swarm-project'
     | '/api/swarm-reports'
     | '/api/swarm-roster'
@@ -1747,6 +1759,7 @@ export interface FileRouteTypes {
     | '/api/swarm-memory'
     | '/api/swarm-missions'
     | '/api/swarm-orchestrator-loop'
+    | '/api/swarm-profiles-bootstrap'
     | '/api/swarm-project'
     | '/api/swarm-reports'
     | '/api/swarm-roster'
@@ -1899,6 +1912,7 @@ export interface RootRouteChildren {
   ApiSwarmMemoryRoute: typeof ApiSwarmMemoryRouteWithChildren
   ApiSwarmMissionsRoute: typeof ApiSwarmMissionsRoute
   ApiSwarmOrchestratorLoopRoute: typeof ApiSwarmOrchestratorLoopRoute
+  ApiSwarmProfilesBootstrapRoute: typeof ApiSwarmProfilesBootstrapRoute
   ApiSwarmProjectRoute: typeof ApiSwarmProjectRoute
   ApiSwarmReportsRoute: typeof ApiSwarmReportsRoute
   ApiSwarmRosterRoute: typeof ApiSwarmRosterRoute
@@ -2241,6 +2255,13 @@ declare module '@tanstack/react-router' {
       path: '/api/swarm-project'
       fullPath: '/api/swarm-project'
       preLoaderRoute: typeof ApiSwarmProjectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/swarm-profiles-bootstrap': {
+      id: '/api/swarm-profiles-bootstrap'
+      path: '/api/swarm-profiles-bootstrap'
+      fullPath: '/api/swarm-profiles-bootstrap'
+      preLoaderRoute: typeof ApiSwarmProfilesBootstrapRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/swarm-orchestrator-loop': {
@@ -3279,6 +3300,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSwarmMemoryRoute: ApiSwarmMemoryRouteWithChildren,
   ApiSwarmMissionsRoute: ApiSwarmMissionsRoute,
   ApiSwarmOrchestratorLoopRoute: ApiSwarmOrchestratorLoopRoute,
+  ApiSwarmProfilesBootstrapRoute: ApiSwarmProfilesBootstrapRoute,
   ApiSwarmProjectRoute: ApiSwarmProjectRoute,
   ApiSwarmReportsRoute: ApiSwarmReportsRoute,
   ApiSwarmRosterRoute: ApiSwarmRosterRoute,

@@ -25,7 +25,7 @@ export type SwarmKanbanCard = {
   source?: string
 }
 
-type SwarmKanbanFile = { cards: SwarmKanbanCard[] }
+export type SwarmKanbanFile = { cards: SwarmKanbanCard[] }
 
 type ListFilters = {
   status?: string | null
@@ -158,4 +158,14 @@ export function updateSwarmKanbanCard(cardId: string, updates: UpdateSwarmKanban
   file.cards[index] = next
   writeKanbanFile(file)
   return next
+}
+
+/** Read the full kanban file. Exported for use by the orchestration scheduler. */
+export function readSwarmKanban(): SwarmKanbanFile {
+  return readKanbanFile()
+}
+
+/** Write the full kanban file. Exported for use by the orchestration scheduler. */
+export function writeSwarmKanban(data: SwarmKanbanFile): void {
+  writeKanbanFile(data)
 }

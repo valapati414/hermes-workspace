@@ -251,3 +251,68 @@ listenOn(host)
 if (host === '127.0.0.1') {
   listenOn('::1')
 }
+
+// ─── Orchestration Scheduler ─────────────────────────────────────────────────
+// Periodically calls the server's own REST API to:
+//   1. Bootstrap worker profiles on first boot
+//   2. Run the orchestrator loop (check stale workers, auto-continue tasks)
+//   3. Dispatch any kanban cards that are in 'ready' state
+// This runs entirely in the server-entry process using fetch(), so it works
+// regardless of how the Vite bundle splits internal modules.
+if (process.env.SWARM_SCHEDULER_DISABLED !== '1') {
+  const schedulerIntervalMs = Math.max(10_000, parseInt(process.env.SWARM_LOOP_INTERVAL_MS || '60000', 10))
+  const schedulerBase = `http://127.0.0.1:${port}`
+  let schedulerConsecutiveErrors = 0
+
+  async function schedulerTick() {
+    try {
+      // Run the orchestrator loop — handles stale workers, autoContinue, reviews
+      const loopRes = await fetch(`${schedulerBase}/api/swarm-orchestrator-loop`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          autoContinue: true,
+          allowExecution: true,
+          staleMinutes: 10,
+        }),
+      })
+      if (!loopRes.ok) {
+        const text = await loopRes.text().catch(() => '')
+        // 401 means auth is required — skip silently (unauthenticated internal call)
+        if (loopRes.status !== 401) {
+          console.warn(`[swarm-scheduler] orchestrator-loop returned ${loopRes.status}: ${text.slice(0, 200)}`)
+        }
+      }
+      schedulerConsecutiveErrors = 0
+    } catch (err) {
+      schedulerConsecutiveErrors++
+      if (schedulerConsecutiveErrors <= 3 || schedulerConsecutiveErrors % 10 === 0) {
+        console.warn('[swarm-scheduler] tick error:', err?.message ?? err)
+      }
+    }
+  }
+
+  async function bootstrapProfiles() {
+    try {
+      const res = await fetch(`${schedulerBase}/api/swarm-profiles-bootstrap`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json().catch(() => null)
+        if (data?.summary) {
+          console.log(`[swarm-scheduler] profiles bootstrap — total:${data.summary.total} created:${data.summary.created} failed:${data.summary.failed}`)
+        }
+      }
+    } catch (err) {
+      console.warn('[swarm-scheduler] profiles bootstrap error:', err?.message ?? err)
+    }
+  }
+
+  console.log(`[swarm-scheduler] starting — interval ${schedulerIntervalMs}ms`)
+
+  // Bootstrap profiles after 5s then start the periodic loop at 10s
+  setTimeout(() => {
+    bootstrapProfiles().then(() => {
+      schedulerTick()
+      setInterval(schedulerTick, schedulerIntervalMs)
+    })
+  }, 5_000)
+}

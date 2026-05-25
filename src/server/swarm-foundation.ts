@@ -452,13 +452,28 @@ export function patchSwarmRuntimeFile(
 
 export function listSwarmWorkerIds(options?: { swarmOnly?: boolean }): Array<string> {
   const profilesDir = getProfilesDir()
-  if (!fs.existsSync(profilesDir)) return []
-  const entries = fs.readdirSync(profilesDir, { withFileTypes: true })
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => (options?.swarmOnly ?? false ? isSwarmWorkerId(name) : true))
-    .sort()
+  if (fs.existsSync(profilesDir)) {
+    const entries = fs.readdirSync(profilesDir, { withFileTypes: true })
+    const fromProfiles = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter((name) => (options?.swarmOnly ?? false ? isSwarmWorkerId(name) : true))
+      .sort()
+    if (fromProfiles.length > 0) return fromProfiles
+  }
+
+  // Fall back to swarm.yaml roster when no profiles exist yet (fresh install).
+  // This ensures the orchestrator loop processes roster workers even before
+  // their profile directories have been bootstrapped.
+  try {
+    const roster = rosterByWorkerId()
+    const ids = [...roster.keys()]
+      .filter((name) => (options?.swarmOnly ?? false ? isSwarmWorkerId(name) : true))
+      .sort()
+    if (ids.length > 0) return ids
+  } catch { /* ignore — roster may not exist */ }
+
+  return []
 }
 
 export function getSwarmProfilePath(workerId: string): string {
