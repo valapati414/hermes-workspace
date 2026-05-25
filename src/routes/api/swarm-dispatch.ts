@@ -4,6 +4,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { getProfilesDir } from '../../server/claude-paths'
 import { isAuthenticated } from '../../server/auth-middleware'
 import { newestCheckpointFromMessages, parseSwarmCheckpoint, type ParsedSwarmCheckpoint } from '../../server/swarm-checkpoints'
 import { readWorkerMessages } from '../../server/swarm-chat-reader'
@@ -83,18 +84,6 @@ const MAX_PROMPT_CHARS = 32_000
 const MAX_OUTPUT_CHARS = 200_000
 const DEFAULT_TIMEOUT_S = 240
 const MAX_TIMEOUT_S = 600
-
-function getProfilesDir(): string {
-  const base = process.env.HERMES_HOME ?? process.env.CLAUDE_HOME
-  if (base) {
-    const parts = base.split('/').filter(Boolean)
-    if (parts.length >= 2 && parts.at(-2) === 'profiles') {
-      return base.split('/').slice(0, -1).join('/')
-    }
-    return join(base, 'profiles')
-  }
-  return join(homedir(), '.hermes', 'profiles')
-}
 
 function getWrapperPath(workerId: string): string {
   const worker = rosterByWorkerId([workerId]).get(workerId)
@@ -547,7 +536,7 @@ async function waitForFreshCheckpoint(
       if (runtimeCheckpoint && runtimeCheckpoint.raw !== previousRaw) return runtimeCheckpoint
     }
 
-    const chat = readWorkerMessages(profilePath, 50)
+    const chat = await readWorkerMessages(profilePath, 50)
     if (chat.ok) {
       const checkpoint = newestCheckpointFromMessages(chat.messages)
       if (checkpoint && checkpoint.raw !== previousRaw) return checkpoint
@@ -899,7 +888,7 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
     const cmd = useWrapper ? wrapperPath : resolveHermesBin()
     const args = useWrapper
       ? ['chat', '-q', '-Q', '--yolo', '--ignore-rules', '--source', 'swarm-dispatch', prompt]
-      : ['chat', '-q', '-Q', '--yolo', '--ignore-rules', '--source', 'swarm-dispatch']
+      : ['chat', '-q', '-Q', '--yolo', '--ignore-rules', '--source', 'swarm-dispatch', prompt]
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       HERMES_HOME: profilePath,
@@ -919,7 +908,6 @@ function runWorker(assignment: AssignmentRequest, timeoutMs: number, roster: Swa
         timeout: timeoutMs,
         maxBuffer: MAX_OUTPUT_CHARS,
         killSignal: 'SIGTERM',
-        input: prompt,
       },
       (error, stdout, stderr) => {
         const durationMs = Date.now() - startedAt

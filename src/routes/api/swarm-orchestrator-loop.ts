@@ -157,7 +157,7 @@ async function runWorkerLoop(workerId: string, staleMs: number, dryRun: boolean)
   const profilePath = join(getProfilesDir(), workerId)
   const runtimePath = join(profilePath, 'runtime.json')
   const current = readRuntimeJson(runtimePath)
-  const chat = readWorkerMessages(profilePath, 40)
+  const chat = await readWorkerMessages(profilePath, 40)
   if (!chat.ok) {
     return {
       workerId,

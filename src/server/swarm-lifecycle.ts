@@ -1,7 +1,10 @@
-import { execFile, execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { promisify } from 'node:util'
+
+const execFileAsync = promisify(execFile)
 import { getProfilesDir } from './claude-paths'
 import { SWARM_MEMORY_ROOT } from './swarm-environment'
 import { appendSwarmMemoryEvent } from './swarm-memory'
@@ -97,12 +100,12 @@ function recommendedAction(state: SwarmContextState): string {
   }
 }
 
-export function getSwarmLifecycleStatus(workerId: string, policy = DEFAULT_POLICY): SwarmLifecycleStatus {
+export async function getSwarmLifecycleStatus(workerId: string, policy = DEFAULT_POLICY): Promise<SwarmLifecycleStatus> {
   const profilePath = join(getProfilesDir(), workerId)
   let parsed: Record<string, unknown> = {}
   try {
-    const raw = execFileSync('python3', ['-c', PYTHON_STATUS, profilePath], { encoding: 'utf8', timeout: 5_000 })
-    parsed = JSON.parse(raw) as Record<string, unknown>
+    const { stdout } = await execFileAsync('python3', ['-c', PYTHON_STATUS, profilePath], { encoding: 'utf8', timeout: 5_000 })
+    parsed = JSON.parse(stdout) as Record<string, unknown>
   } catch {
     parsed = { ok: false }
   }
@@ -273,7 +276,7 @@ export async function renewWorker(workerId: string): Promise<{ ok: boolean; rest
 export async function autoSweepLifecycle(workerIds: Array<string>): Promise<Array<{ workerId: string; action: 'none' | 'request-handoff' | 'renew'; status: SwarmLifecycleStatus; result?: { ok: boolean; error?: string } }>> {
   const out: Array<{ workerId: string; action: 'none' | 'request-handoff' | 'renew'; status: SwarmLifecycleStatus; result?: { ok: boolean; error?: string } }> = []
   for (const workerId of workerIds) {
-    const status = getSwarmLifecycleStatus(workerId)
+    const status = await getSwarmLifecycleStatus(workerId)
     if (status.contextState === 'handoff_required') {
       const result = await requestWorkerHandoff(workerId)
       out.push({ workerId, action: 'request-handoff', status, result: { ok: result.ok, error: result.error } })

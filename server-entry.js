@@ -203,9 +203,19 @@ async function requestHandler(req, res) {
   try {
     const response = await server.fetch(request)
 
+    const outHeaders = Object.fromEntries(response.headers.entries())
+    // Add clickjacking protection headers that are ineffective when delivered
+    // via <meta http-equiv="Content-Security-Policy"> (ISSUE-22).
+    // frame-ancestors in a <meta> tag is ignored by all browsers per spec;
+    // it must be sent as an HTTP header.
+    outHeaders['X-Frame-Options'] = 'DENY'
+    if (!outHeaders['content-security-policy']) {
+      outHeaders['content-security-policy'] = "frame-ancestors 'none'"
+    }
+
     res.writeHead(
       response.status,
-      Object.fromEntries(response.headers.entries()),
+      outHeaders,
     )
 
     if (response.body) {

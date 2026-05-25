@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { isAuthenticated } from '../../server/auth-middleware'
+import { getProfilesDir } from '../../server/claude-paths'
 import { readWorkerMessages, type SwarmChatMessage } from '../../server/swarm-chat-reader'
 import { rosterByWorkerId } from '../../server/swarm-roster'
 
@@ -42,18 +43,6 @@ const TMUX_BIN_CANDIDATES = [
 
 function validateWorkerId(workerId: string): boolean {
   return /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(workerId)
-}
-
-function getProfilesDir(): string {
-  const base = process.env.HERMES_HOME ?? process.env.CLAUDE_HOME
-  if (base) {
-    const parts = base.split('/').filter(Boolean)
-    if (parts.length >= 2 && parts.at(-2) === 'profiles') {
-      return base.split('/').slice(0, -1).join('/')
-    }
-    return join(base, 'profiles')
-  }
-  return join(homedir(), '.hermes', 'profiles')
 }
 
 function getProfilePath(workerId: string): string {
@@ -198,7 +187,7 @@ async function waitForReply(workerId: string, baselineLastId: string | null, pro
   const profilePath = getProfilePath(workerId)
 
   while (Date.now() - startedAt < timeoutMs) {
-    const chat = readWorkerMessages(profilePath, limit)
+    const chat = await readWorkerMessages(profilePath, limit)
     const response: DirectChatResponse = {
       ok: chat.ok,
       workerId,
@@ -224,7 +213,7 @@ async function waitForReply(workerId: string, baselineLastId: string | null, pro
     await sleep(1000)
   }
 
-  const finalChat = readWorkerMessages(profilePath, limit)
+  const finalChat = await readWorkerMessages(profilePath, limit)
   return {
     ok: finalChat.ok,
     workerId,
@@ -267,7 +256,7 @@ export const Route = createFileRoute('/api/swarm-direct-chat')({
         }
 
         const profilePath = getProfilePath(workerId)
-        const baselineChat = readWorkerMessages(profilePath, limit)
+        const baselineChat = await readWorkerMessages(profilePath, limit)
         const baselineLastId = baselineChat.messages.length ? baselineChat.messages[baselineChat.messages.length - 1].id : null
 
         const delivered = await sendPromptToLiveSession(workerId, prompt)

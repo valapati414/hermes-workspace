@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
 import { readWorkerMessages } from './swarm-chat-reader'
 
 describe('readWorkerMessages', () => {
-  it('treats a missing state.db as an unavailable session, not a UI error', () => {
+  it('treats a missing state.db as an unavailable session, not a UI error', async () => {
     const profilePath = mkdtempSync(join(tmpdir(), 'swarm-chat-reader-'))
 
     try {
-      const result = readWorkerMessages(profilePath, 30)
+      const result = await readWorkerMessages(profilePath, 30)
 
       expect(result).toEqual({
         sessionId: null,

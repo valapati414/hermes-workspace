@@ -341,7 +341,7 @@ export const Route = createFileRoute('/api/conductor-spawn')({
                   // Also check the worker's chat SQLite DB for checkpoint messages
                   // (tmux workers write checkpoints there)
                   if (!checkpoint || checkpoint.stateLabel === 'IN_PROGRESS') {
-                    const chat = readWorkerMessages(profilePath, 50)
+                    const chat = await readWorkerMessages(profilePath, 50)
                     if (chat.ok) {
                       const msgCheckpoint = newestCheckpointFromMessages(chat.messages)
                       if (msgCheckpoint && msgCheckpoint.raw !== snapshot.checkpointRaw) {

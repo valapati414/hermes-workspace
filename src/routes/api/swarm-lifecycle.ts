@@ -28,7 +28,8 @@ export const Route = createFileRoute('/api/swarm-lifecycle')({
         const url = new URL(request.url)
         const requested = validWorkerId(url.searchParams.get('workerId'))
         const ids = requested ? [requested] : listSwarmWorkerIds()
-        return json({ ok: true, checkedAt: Date.now(), workers: ids.map((id) => getSwarmLifecycleStatus(id)) })
+        const workers = await Promise.all(ids.map((id) => getSwarmLifecycleStatus(id)))
+        return json({ ok: true, checkedAt: Date.now(), workers })
       },
       POST: async ({ request }) => {
         if (!isAuthenticated(request)) return json({ ok: false, error: 'Unauthorized' }, { status: 401 })
@@ -45,11 +46,11 @@ export const Route = createFileRoute('/api/swarm-lifecycle')({
         const workerId = workerIdMaybe
         if (action === 'request-handoff') {
           const result = await requestWorkerHandoff(workerId)
-          return json({ ok: result.ok, workerId, action, ...result })
+          return json({ workerId, action, ...result })
         }
         if (action === 'renew') {
           const result = await renewWorker(workerId)
-          return json({ ok: result.ok, workerId, action, ...result })
+          return json({ workerId, action, ...result })
         }
         if (action === 'notify-handoff-written') {
           notifyHandoffWritten(workerId)

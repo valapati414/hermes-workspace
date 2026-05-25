@@ -1,7 +1,8 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
 import { getClaudeRoot, getWorkspaceClaudeHome } from './claude-paths'
 import {
   SWARM_KANBAN_FILE,
@@ -161,61 +162,74 @@ function claudeWorkspacePath(): string {
   return path.join(getClaudeRoot(), 'kanban')
 }
 
-function claudeCliPath(): string | null {
+const execFileAsync = promisify(execFile)
+
+async function claudeCliPath(): Promise<string | null> {
   try {
-    const output = execFileSync('which', ['claude'], { encoding: 'utf8', timeout: 5_000 }).trim()
-    return output || null
+    const { stdout } = await execFileAsync('which', ['claude'], { encoding: 'utf8', timeout: 5_000 })
+    return stdout.trim() || null
   } catch {
     return null
   }
 }
 
-function checkClaudeCli(): { ok: boolean; path?: string | null; reason?: string } {
-  const cli = claudeCliPath()
+async function checkClaudeCli(): Promise<{ ok: boolean; path?: string | null; reason?: string }> {
+  const cli = await claudeCliPath()
   if (!cli) return { ok: false, reason: 'claude CLI not found on PATH' }
   try {
-    execFileSync(cli, ['--version'], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, CLAUDE_HOME: claudeProfileRoot() } })
+    await execFileAsync(cli, ['--version'], { encoding: 'utf8', timeout: 10_000, env: { ...process.env, CLAUDE_HOME: claudeProfileRoot() } })
     return { ok: true, path: cli }
   } catch (error) {
     return { ok: false, path: cli, reason: error instanceof Error ? error.message : String(error) }
   }
 }
 
-function detectClaudeKanban(): ClaudeDetection {
+// Cache detection result for 5 minutes to avoid repeated process spawning on every request.
+let _detectionCache: { result: ClaudeDetection; expiresAt: number } | null = null
+
+async function detectClaudeKanban(): Promise<ClaudeDetection> {
+  if (_detectionCache && Date.now() < _detectionCache.expiresAt) {
+    return _detectionCache.result
+  }
   const dbPath = claudeDbPath()
   const workspacePath = claudeWorkspacePath()
   const hasDb = fs.existsSync(dbPath)
   const hasWorkspace = fs.existsSync(workspacePath)
 
   if (!hasDb && !hasWorkspace) {
-    return {
+    const result: ClaudeDetection = {
       available: false,
       cliPath: null,
       dbPath,
       workspacePath,
       reason: 'Hermes Kanban storage not found; using the local Swarm Board fallback.',
     }
+    _detectionCache = { result, expiresAt: Date.now() + 5 * 60_000 }
+    return result
   }
 
-  const cli = checkClaudeCli()
-  return {
+  const cli = await checkClaudeCli()
+  const result: ClaudeDetection = {
     available: true,
     cliPath: cli.ok ? cli.path ?? null : null,
     dbPath,
     workspacePath,
     reason: cli.ok ? undefined : 'Hermes Kanban storage detected; CLI unavailable, using direct local storage access.',
   }
+  _detectionCache = { result, expiresAt: Date.now() + 5 * 60_000 }
+  return result
 }
 
 function sqliteQuote(value: string): string {
   return `'${value.replace(/'/g, "''")}'`
 }
 
-function runSqlite(dbPath: string, sql: string): string {
-  return execFileSync('sqlite3', [dbPath, '-json', sql], {
+async function runSqlite(dbPath: string, sql: string): Promise<string> {
+  const { stdout } = await execFileAsync('sqlite3', [dbPath, '-json', sql], {
     encoding: 'utf8',
     timeout: 15_000,
-  }).trim()
+  })
+  return stdout.trim()
 }
 
 function claudeTaskProjection(): string {
@@ -235,8 +249,8 @@ function claudeTaskProjection(): string {
   ].join(' ')
 }
 
-function readClaudeTasks(): ClaudeTaskRow[] {
-  const detection = detectClaudeKanban()
+async function readClaudeTasks(): Promise<ClaudeTaskRow[]> {
+  const detection = await detectClaudeKanban()
   if (!detection.available) return []
   const query = [
     'select',
@@ -244,15 +258,15 @@ function readClaudeTasks(): ClaudeTaskRow[] {
     'from tasks',
     'order by tasks.created_at desc, tasks.id desc;',
   ].join(' ')
-  const raw = runSqlite(detection.dbPath, query)
+  const raw = await runSqlite(detection.dbPath, query)
   const parsed = raw ? (JSON.parse(raw) as ClaudeTaskRow[]) : []
   return Array.isArray(parsed) ? parsed : []
 }
 
-function readClaudeTask(taskId: string): ClaudeTaskRow | null {
-  const detection = detectClaudeKanban()
+async function readClaudeTask(taskId: string): Promise<ClaudeTaskRow | null> {
+  const detection = await detectClaudeKanban()
   if (!detection.available) return null
-  const raw = runSqlite(
+  const raw = await runSqlite(
     detection.dbPath,
     `select ${claudeTaskProjection()} from tasks where id = ${sqliteQuote(taskId)} limit 1;`,
   )
@@ -333,10 +347,10 @@ function mapBoardStatus(status: SwarmKanbanCard['status'] | null | undefined): s
   }
 }
 
-function validateNativeParents(dbPath: string, parentIds: string[]): Map<string, string> {
+async function validateNativeParents(dbPath: string, parentIds: string[]): Promise<Map<string, string>> {
   const uniqueParentIds = [...new Set(parentIds.map((parentId) => parentId.trim()).filter(Boolean))]
   if (uniqueParentIds.length === 0) return new Map()
-  const raw = runSqlite(
+  const raw = await runSqlite(
     dbPath,
     `select id, status from tasks where id in (${uniqueParentIds.map(sqliteQuote).join(', ')});`,
   )
@@ -416,7 +430,19 @@ const localBackend: KanbanBackend = {
 
 const claudeBackend: KanbanBackend = {
   meta() {
-    const detection = detectClaudeKanban()
+    // Use cached detection result; first call may return stale data until the
+    // async detection completes, but this is acceptable for meta-only queries.
+    const detection = _detectionCache?.result ?? {
+      available: false,
+      cliPath: null,
+      dbPath: claudeDbPath(),
+      workspacePath: claudeWorkspacePath(),
+      reason: 'Detection pending…',
+    }
+    // Kick off background refresh if cache is empty or expired.
+    if (!_detectionCache || Date.now() >= _detectionCache.expiresAt) {
+      detectClaudeKanban().catch(() => {})
+    }
     return {
       id: 'claude',
       label: 'Hermes Kanban',
@@ -428,11 +454,11 @@ const claudeBackend: KanbanBackend = {
         : detection.reason ?? 'Hermes Kanban not detected.',
     }
   },
-  list() {
-    return readClaudeTasks().map(claudeTaskToCard)
+  async list() {
+    return (await readClaudeTasks()).map(claudeTaskToCard)
   },
-  create(input) {
-    const detection = detectClaudeKanban()
+  async create(input) {
+    const detection = await detectClaudeKanban()
     if (!detection.available) throw new Error(detection.reason ?? 'Hermes Kanban not detected')
     const nowSeconds = Math.floor(Date.now() / 1000)
     const parentIds = Array.isArray(input.parents)
@@ -442,14 +468,14 @@ const claudeBackend: KanbanBackend = {
       ? input.idempotencyKey.trim()
       : null
     if (idempotencyKey) {
-      const existing = runSqlite(
+      const existing = await runSqlite(
         detection.dbPath,
         `select ${claudeTaskProjection()} from tasks where idempotency_key = ${sqliteQuote(idempotencyKey)} and status != 'archived' order by created_at desc, id desc limit 1;`,
       )
       const parsed = existing ? (JSON.parse(existing) as ClaudeTaskRow[]) : []
       if (Array.isArray(parsed) && parsed[0]) return claudeTaskToCard(parsed[0])
     }
-    const parentStatuses = validateNativeParents(detection.dbPath, parentIds)
+    const parentStatuses = await validateNativeParents(detection.dbPath, parentIds)
     const taskId = `t_${randomUUID().replace(/-/g, '').slice(0, 8)}`
     const status = deriveNativeCreateStatus(input.status ?? 'backlog', parentStatuses)
     const linkStatements = parentIds.map(
@@ -477,13 +503,13 @@ const claudeBackend: KanbanBackend = {
       ...linkStatements,
       'commit;',
     ].join(' ')
-    runSqlite(detection.dbPath, statements)
-    const created = readClaudeTask(taskId)
+    await runSqlite(detection.dbPath, statements)
+    const created = await readClaudeTask(taskId)
     if (!created) throw new Error(`Created Hermes task ${taskId} but could not read it back`)
     return claudeTaskToCard(created)
   },
-  update(cardId, updates) {
-    const detection = detectClaudeKanban()
+  async update(cardId, updates) {
+    const detection = await detectClaudeKanban()
     if (!detection.available) return null
     const assignments: string[] = []
     if (typeof updates.title === 'string' && updates.title.trim()) assignments.push(`title = ${sqliteQuote(updates.title.trim())}`)
@@ -497,11 +523,11 @@ const claudeBackend: KanbanBackend = {
       if (status !== 'done') assignments.push('completed_at = NULL')
     }
     if (assignments.length === 0) {
-      const current = readClaudeTask(cardId)
+      const current = await readClaudeTask(cardId)
       return current ? claudeTaskToCard(current) : null
     }
-    runSqlite(detection.dbPath, `update tasks set ${assignments.join(', ')} where id = ${sqliteQuote(cardId)};`)
-    const updated = readClaudeTask(cardId)
+    await runSqlite(detection.dbPath, `update tasks set ${assignments.join(', ')} where id = ${sqliteQuote(cardId)};`)
+    const updated = await readClaudeTask(cardId)
     return updated ? claudeTaskToCard(updated) : null
   },
 }
@@ -597,6 +623,7 @@ export function resolveKanbanBackend(): KanbanBackend {
     return getCapabilities().kanban ? dashboardProxyBackend : localBackend
   }
   if (preference === 'claude') {
+    // meta() uses cached detection; falls back gracefully on first call
     const claudeMeta = claudeBackend.meta()
     return claudeMeta.detected ? claudeBackend : localBackend
   }

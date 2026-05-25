@@ -5,23 +5,10 @@ import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { isAuthenticated } from '../../server/auth-middleware'
+import { getProfilesDir } from '../../server/claude-paths'
 import { rosterByWorkerId } from '../../server/swarm-roster'
 import { resolveSwarmModelLabel } from '../../server/swarm-model-resolver'
 import { syncSwarmProfileModel } from '../../server/swarm-profile-config'
-
-// Inlined to avoid SSR module-resolution races against freshly-written
-// helpers; mirrors `src/server/claude-paths.ts` getProfilesDir().
-function getProfilesDir(): string {
-  const envHome = process.env.HERMES_HOME || process.env.CLAUDE_HOME
-  if (envHome) {
-    const parts = envHome.split('/').filter(Boolean)
-    if (parts.length >= 2 && parts.at(-2) === 'profiles') {
-      return envHome.split('/').slice(0, -1).join('/')
-    }
-    return join(envHome, 'profiles')
-  }
-  return join(homedir(), '.hermes', 'profiles')
-}
 
 /**
  * POST /api/swarm-tmux-start

@@ -37,7 +37,7 @@ export const Route = createFileRoute('/api/swarm-chat')({
         const limitRaw = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
         const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isFinite(limitRaw) ? limitRaw : DEFAULT_LIMIT))
         const profilePath = join(getProfilesDir(), workerIdRaw)
-        const result = readWorkerMessages(profilePath, limit)
+        const result = await readWorkerMessages(profilePath, limit)
         const response: ChatResponse = {
           workerId: workerIdRaw,
           sessionId: result.sessionId,

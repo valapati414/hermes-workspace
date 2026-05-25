@@ -158,24 +158,7 @@ function isSessionDismissed(sessionKey: string): boolean {
   return dismissals.some((d) => d.sessionKey === sessionKey)
 }
 
-export function useModelSuggestions(_opts: {
-  currentModel: string
-  sessionKey: string
-  messages: Array<Message>
-  availableModels: Array<string>
-}) {
-  // DISABLED: was causing infinite re-render loop (Maximum update depth exceeded)
-  // TODO: fix the dependency array / memoization and re-enable
-  return {
-    suggestion: null as Suggestion | null,
-    dismiss: () => {},
-    dismissForSession: () => {},
-  }
-}
-
-// -ignore -- disabled, will re-enable after fixing deps
-
-function _useModelSuggestionsDisabled({
+export function useModelSuggestions({
   currentModel,
   sessionKey,
   messages,

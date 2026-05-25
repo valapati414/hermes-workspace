@@ -1,6 +1,9 @@
-import { execFileSync } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
+
+const execFileAsync = promisify(execFile)
 
 export type SwarmChatMessage = {
   id: string
@@ -139,7 +142,7 @@ print(json.dumps({
 }))
 `
 
-export function readWorkerMessages(profilePath: string, limit: number): SwarmChatReadResult {
+export async function readWorkerMessages(profilePath: string, limit: number): Promise<SwarmChatReadResult> {
   const dbPath = join(profilePath, 'state.db')
   if (!existsSync(dbPath)) {
     return {
@@ -150,12 +153,12 @@ export function readWorkerMessages(profilePath: string, limit: number): SwarmCha
     }
   }
   try {
-    const raw = execFileSync(
+    const { stdout } = await execFileAsync(
       'python3',
       ['-c', PYTHON_SCRIPT, dbPath, String(limit)],
       { encoding: 'utf-8', timeout: 5_000 },
     )
-    const parsed = JSON.parse(raw) as {
+    const parsed = JSON.parse(stdout) as {
       sessionId: string | null
       sessionTitle: string | null
       messages: Array<SwarmChatMessage>
